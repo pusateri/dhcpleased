@@ -21,6 +21,7 @@
 
 #include <sys/types.h>
 #include <sys/queue.h>
+#include "compat/queue.h"
 #include <sys/socket.h>
 #include <sys/syslog.h>
 #include <sys/uio.h>
@@ -36,7 +37,11 @@
 
 #include <errno.h>
 #include <event.h>
+#if defined(__OpenBSD__)
 #include <imsg.h>
+#else
+#include "compat/imsg.h"
+#endif
 #include <pwd.h>
 #include <signal.h>
 #include <stddef.h>
@@ -46,6 +51,15 @@
 #include <time.h>
 #include <unistd.h>
 #include <vis.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
+
+#ifndef LINK_STATE_IS_UP
+#define LINK_STATE_IS_UP(_s)    \
+          ((_s) >= LINK_STATE_UP || (_s) == LINK_STATE_UNKNOWN)
+#endif /* LINK_STATE_IS_UP */
 
 #include "checksum.h"
 #include "log.h"
@@ -196,10 +210,12 @@ engine(int debug, int verbose)
 	if (chdir("/") == -1)
 		fatal("chdir(\"/\")");
 
+#if HAVE_PLEDGE
 	if (unveil("/", "") == -1)
 		fatal("unveil /");
 	if (unveil(NULL, NULL) == -1)
 		fatal("unveil");
+#endif /* HAVE_PLEDGE */
 
 	setproctitle("%s", "engine");
 	log_procinit("engine");
@@ -209,8 +225,10 @@ engine(int debug, int verbose)
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
 		fatal("can't drop privileges");
 
+#if HAVE_PLEDGE
 	if (pledge("stdio recvfd", NULL) == -1)
 		fatal("pledge");
+#endif /* HAVE_PLEDGE */
 
 	event_init();
 
@@ -458,8 +476,10 @@ engine_dispatch_main(int fd, short event, void *bula)
 			    iev_frontend);
 			event_add(&iev_frontend->ev, NULL);
 
+#if HAVE_PLEDGE
 			if (pledge("stdio", NULL) == -1)
 				fatal("pledge");
+#endif /* HAVE_PLEDGE */
 
 			break;
 		case IMSG_UPDATE_IF:
@@ -759,8 +779,13 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 	char			 hostname[4 * 255 + 1];
 	char			 ifnamebuf[IF_NAMESIZE], *if_name;
 
+#if defined(__OpenBSD__)
 	if (bcast_mac.ether_addr_octet[0] == 0)
 		memset(bcast_mac.ether_addr_octet, 0xff, ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+	if (bcast_mac.octet[0] == 0)
+		memset(bcast_mac.octet, 0xff, ETHER_ADDR_LEN);
+#endif
 
 	if_name = if_indextoname(iface->if_index, ifnamebuf);
 
@@ -779,11 +804,21 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 		return;
 	}
 	eh = (struct ether_header *)p;
+#if defined(__OpenBSD__)
 	memcpy(ether_src.ether_addr_octet, eh->ether_shost,
 	    sizeof(ether_src.ether_addr_octet));
+#elif defined(__FreeBSD__)
+	memcpy(ether_src.octet, eh->ether_shost,
+	    sizeof(ether_src.octet));
+#endif
 	strlcpy(from, ether_ntoa(&ether_src), sizeof(from));
+#if defined(__OpenBSD__)
 	memcpy(ether_dst.ether_addr_octet, eh->ether_dhost,
 	    sizeof(ether_dst.ether_addr_octet));
+#elif defined(__FreeBSD__)
+	memcpy(ether_dst.octet, eh->ether_dhost,
+	    sizeof(ether_dst.octet));
+#endif
 	strlcpy(to, ether_ntoa(&ether_dst), sizeof(to));
 	p += sizeof(*eh);
 	rem -= sizeof(*eh);
@@ -803,7 +838,11 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 	if (rem < (size_t)ip->ip_hl << 2)
 		goto too_short;
 
+#if defined(__OpenBSD__)
 	if ((dhcp->csumflags & M_IPV4_CSUM_IN_OK) == 0 &&
+#elif defined(__FreeBSD__)
+	if ((dhcp->csumflags & CSUM_L3_VALID) == 0 &&
+#endif
 	    wrapsum(checksum((uint8_t *)ip, ip->ip_hl << 2, 0)) != 0) {
 		log_warnx("%s: bad IP checksum", __func__);
 		return;
@@ -850,7 +889,11 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 	p += sizeof(*udp);
 	rem -= sizeof(*udp);
 
+#if defined(__OpenBSD__)
 	if ((dhcp->csumflags & M_UDP_CSUM_IN_OK) == 0 &&
+#elif defined(__FreeBSD__)
+	if ((dhcp->csumflags & CSUM_L4_VALID) == 0 &&
+#endif
 	    udp->uh_sum != 0) {
 		udp->uh_sum = wrapsum(checksum((uint8_t *)udp, sizeof(*udp),
 		    checksum(p, rem,
@@ -1050,7 +1093,7 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 			while (slen > 0 && p[slen - 1] == '\0')
 				slen--;
 			/* slen might be 0 here, pretend option is not there. */
-			strvisx(hostname, p, slen, VIS_SAFE);
+			strvisx(hostname, (const char *)p, slen, VIS_SAFE);
 			if (log_getverbose() > 1)
 				log_debug("DHO_HOST_NAME: %s", hostname);
 			p += dho_len;
@@ -1069,7 +1112,7 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 			while (slen > 0 && p[slen - 1] == '\0')
 				slen--;
 			/* slen might be 0 here, pretend option is not there. */
-			strvisx(domainname, p, slen, VIS_SAFE);
+			strvisx(domainname, (const char *)p, slen, VIS_SAFE);
 			if (log_getverbose() > 1)
 				log_debug("DHO_DOMAIN_NAME: %s", domainname);
 			p += dho_len;
@@ -1341,7 +1384,9 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 		iface->siaddr = dhcp_hdr->siaddr;
 
 		/* we made sure this is a string futher up */
-		strnvis(iface->file, dhcp_hdr->file, sizeof(iface->file),
+		strnvis(iface->file,
+				sizeof(iface->file),
+				dhcp_hdr->file,
 		    VIS_SAFE);
 
 		strlcpy(iface->domainname, domainname,
@@ -1507,7 +1552,7 @@ state_transition(struct dhcpleased_iface *iface, enum if_state new_state)
 	}
 
 	if_name = if_indextoname(iface->if_index, ifnamebuf);
-	log_debug("%s[%s] %s -> %s, timo: %lld", __func__, if_name == NULL ?
+	log_debug("%s[%s] %s -> %s, timo: %jd", __func__, if_name == NULL ?
 	    "?" : if_name, if_state_name[old_state], if_state_name[new_state],
 	    iface->timo.tv_sec);
 
@@ -1552,7 +1597,7 @@ iface_timeout(int fd, short events, void *arg)
 	case IF_RENEWING:
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		timespecsub(&now, &iface->request_time, &res);
-		log_debug("%s: res.tv_sec: %lld, rebinding_time: %u", __func__,
+		log_debug("%s: res.tv_sec: %jd, rebinding_time: %u", __func__,
 		    res.tv_sec, iface->rebinding_time);
 		if (res.tv_sec >= iface->rebinding_time)
 			state_transition(iface, IF_REBINDING);
@@ -1562,7 +1607,7 @@ iface_timeout(int fd, short events, void *arg)
 	case IF_REBINDING:
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		timespecsub(&now, &iface->request_time, &res);
-		log_debug("%s: res.tv_sec: %lld, lease_time: %u", __func__,
+		log_debug("%s: res.tv_sec: %jd, lease_time: %u", __func__,
 		    res.tv_sec, iface->lease_time);
 		if (res.tv_sec > iface->lease_time)
 			state_transition(iface, IF_INIT);

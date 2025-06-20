@@ -18,9 +18,21 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#if defined(__OpenBSD__)
 #define	_PATH_LOCKFILE		"/dev/dhcpleased.lock"
+#elif defined(__FreeBSD__)
+#define	_PATH_LOCKFILE		"/var/run/dhcpleased.pid"
+#endif
+#if defined(__OpenBSD__)
 #define	_PATH_CONF_FILE		"/etc/dhcpleased.conf"
+#elif defined(__FreeBSD__)
+#define	_PATH_CONF_FILE		"/usr/local/etc/dhcpleased.conf"
+#endif
+#if defined(__OpenBSD__)
 #define	_PATH_DHCPLEASED_SOCKET	"/dev/dhcpleased.sock"
+#elif defined(__FreeBSD__)
+#define	_PATH_DHCPLEASED_SOCKET	"/var/run/dhcpleased.sock"
+#endif
 #define	DHCPLEASED_USER		"_dhcp"
 #define	DHCPLEASED_RTA_LABEL	"dhcpleased"
 #define	SERVER_PORT		67

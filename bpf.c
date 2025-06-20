@@ -45,13 +45,21 @@
 
 #include <net/bpf.h>
 #include <net/if.h>
+#if defined(__OpenBSD__)
 #include <net/ethertypes.h>
+#elif defined(__FreeBSD__)
+#include <net/ethernet.h>
+#endif
 #include <netinet/in.h>
 #include <netinet/ip.h>
 
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
 
 #include "bpf.h"
 #include "log.h"
@@ -132,7 +140,10 @@ get_bpf_sock(const char *name)
 	struct bpf_program	 p;
 	struct ifreq		 ifr;
 	u_int			 sz;
-	int			 flag = 1, fildrop = BPF_FILDROP_CAPTURE;
+	int			 flag = 1;
+#ifdef BIOCSFILDROP
+	int			 fildrop = BPF_FILDROP_CAPTURE;
+#endif /* BIOCSFILDROP */
 	int			 bpffd;
 
 	if ((bpffd = open("/dev/bpf", O_RDWR | O_CLOEXEC | O_NONBLOCK)) == -1)
@@ -153,8 +164,10 @@ get_bpf_sock(const char *name)
 	if (ioctl(bpffd, BIOCIMMEDIATE, &flag) == -1)
 		fatal("BIOCIMMEDIATE");
 
+#ifdef BIOCSFILDROP
 	if (ioctl(bpffd, BIOCSFILDROP, &fildrop) == -1)
 		fatal("BIOCSFILDROP");
+#endif /* BIOCSFILDROP */
 
 	/* Set up the bpf filter program structure. */
 	p.bf_len = sizeof(dhcp_bpf_filter) / sizeof(struct bpf_insn);

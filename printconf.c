@@ -19,6 +19,7 @@
 
 #include <sys/types.h>
 #include <sys/queue.h>
+#include "compat/queue.h"
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -30,10 +31,18 @@
 #include <arpa/inet.h>
 
 #include <event.h>
+#if defined(__OpenBSD__)
 #include <imsg.h>
+#else
+#include "compat/imsg.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <vis.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
 
 #include "dhcpleased.h"
 #include "log.h"
@@ -64,7 +73,7 @@ print_dhcp_options(char *indent, uint8_t *p, int len)
 
 		switch (dho) {
 		case DHO_DHCP_CLASS_IDENTIFIER:
-			strvisx(buf, p, dho_len, VIS_DQ | VIS_CSTYLE);
+			strvisx(buf, (const char *)p, dho_len, VIS_DQ | VIS_CSTYLE);
 			p += dho_len;
 			rem -= dho_len;
 			printf("%ssend vendor class id \"%s\"\n", indent, buf);
@@ -81,7 +90,7 @@ print_dhcp_options(char *indent, uint8_t *p, int len)
 				printf("\"\n");
 				break;
 			default:
-				strvisx(buf, p, dho_len, VIS_DQ | VIS_CSTYLE);
+				strvisx(buf, (const char *)p, dho_len, VIS_DQ | VIS_CSTYLE);
 				printf("%ssend client id \"%s\"\n",
 				    indent, buf);
 				break;

@@ -1,4 +1,4 @@
-/*	$OpenBSD: queue.h,v 1.46 2020/12/30 13:33:12 millert Exp $	*/
+/*	$OpenBSD: queue.h,v 1.45 2018/07/12 14:22:54 sashan Exp $	*/
 /*	$NetBSD: queue.h,v 1.11 1996/05/16 05:17:14 mycroft Exp $	*/
 
 /*
@@ -32,10 +32,102 @@
  *	@(#)queue.h	8.5 (Berkeley) 8/20/94
  */
 
-#ifndef	_SYS_QUEUE_H_
-#define	_SYS_QUEUE_H_
+/* OPENBSD ORIGINAL: sys/sys/queue.h */
 
-#include <sys/_null.h>
+#ifndef	_FAKE_QUEUE_H_
+#define	_FAKE_QUEUE_H_
+
+/*
+ * Require for OS/X and other platforms that have old/broken/incomplete
+ * <sys/queue.h>.
+ */
+#undef CIRCLEQ_EMPTY
+#undef CIRCLEQ_END
+#undef CIRCLEQ_ENTRY
+#undef CIRCLEQ_FIRST
+#undef CIRCLEQ_FOREACH
+#undef CIRCLEQ_FOREACH_REVERSE
+#undef CIRCLEQ_HEAD
+#undef CIRCLEQ_HEAD_INITIALIZER
+#undef CIRCLEQ_INIT
+#undef CIRCLEQ_INSERT_AFTER
+#undef CIRCLEQ_INSERT_BEFORE
+#undef CIRCLEQ_INSERT_HEAD
+#undef CIRCLEQ_INSERT_TAIL
+#undef CIRCLEQ_LAST
+#undef CIRCLEQ_NEXT
+#undef CIRCLEQ_PREV
+#undef CIRCLEQ_REMOVE
+#undef CIRCLEQ_REPLACE
+#undef LIST_EMPTY
+#undef LIST_END
+#undef LIST_ENTRY
+#undef LIST_FIRST
+#undef LIST_FOREACH
+#undef LIST_FOREACH_SAFE
+#undef LIST_HEAD
+#undef LIST_HEAD_INITIALIZER
+#undef LIST_INIT
+#undef LIST_INSERT_AFTER
+#undef LIST_INSERT_BEFORE
+#undef LIST_INSERT_HEAD
+#undef LIST_NEXT
+#undef LIST_REMOVE
+#undef LIST_REPLACE
+#undef SIMPLEQ_CONCAT
+#undef SIMPLEQ_EMPTY
+#undef SIMPLEQ_END
+#undef SIMPLEQ_ENTRY
+#undef SIMPLEQ_FIRST
+#undef SIMPLEQ_FOREACH
+#undef SIMPLEQ_FOREACH_SAFE
+#undef SIMPLEQ_HEAD
+#undef SIMPLEQ_HEAD_INITIALIZER
+#undef SIMPLEQ_INIT
+#undef SIMPLEQ_INSERT_AFTER
+#undef SIMPLEQ_INSERT_HEAD
+#undef SIMPLEQ_INSERT_TAIL
+#undef SIMPLEQ_NEXT
+#undef SIMPLEQ_REMOVE_AFTER
+#undef SIMPLEQ_REMOVE_HEAD
+#undef SLIST_EMPTY
+#undef SLIST_END
+#undef SLIST_ENTRY
+#undef SLIST_FIRST
+#undef SLIST_FOREACH
+#undef SLIST_FOREACH_PREVPTR
+#undef SLIST_FOREACH_SAFE
+#undef SLIST_HEAD
+#undef SLIST_HEAD_INITIALIZER
+#undef SLIST_INIT
+#undef SLIST_INSERT_AFTER
+#undef SLIST_INSERT_HEAD
+#undef SLIST_NEXT
+#undef SLIST_REMOVE
+#undef SLIST_REMOVE_AFTER
+#undef SLIST_REMOVE_HEAD
+#undef SLIST_REMOVE_NEXT
+#undef TAILQ_CONCAT
+#undef TAILQ_EMPTY
+#undef TAILQ_END
+#undef TAILQ_ENTRY
+#undef TAILQ_FIRST
+#undef TAILQ_FOREACH
+#undef TAILQ_FOREACH_REVERSE
+#undef TAILQ_FOREACH_REVERSE_SAFE
+#undef TAILQ_FOREACH_SAFE
+#undef TAILQ_HEAD
+#undef TAILQ_HEAD_INITIALIZER
+#undef TAILQ_INIT
+#undef TAILQ_INSERT_AFTER
+#undef TAILQ_INSERT_BEFORE
+#undef TAILQ_INSERT_HEAD
+#undef TAILQ_INSERT_TAIL
+#undef TAILQ_LAST
+#undef TAILQ_NEXT
+#undef TAILQ_PREV
+#undef TAILQ_REMOVE
+#undef TAILQ_REPLACE
 
 /*
  * This file defines five types of data structures: singly-linked lists,
@@ -532,102 +624,5 @@ struct {								\
 		TAILQ_INIT((head2));					\
 	}								\
 } while (0)
-
-/*
- * Singly-linked Tail queue declarations.
- */
-#define	STAILQ_HEAD(name, type)						\
-struct name {								\
-	struct type *stqh_first;	/* first element */		\
-	struct type **stqh_last;	/* addr of last next element */	\
-}
-
-#define	STAILQ_HEAD_INITIALIZER(head)					\
-	{ NULL, &(head).stqh_first }
-
-#define	STAILQ_ENTRY(type)						\
-struct {								\
-	struct type *stqe_next;	/* next element */			\
-}
-
-/*
- * Singly-linked Tail queue access methods.
- */
-#define	STAILQ_FIRST(head)	((head)->stqh_first)
-#define	STAILQ_END(head)	NULL
-#define	STAILQ_EMPTY(head)	(STAILQ_FIRST(head) == STAILQ_END(head))
-#define	STAILQ_NEXT(elm, field)	((elm)->field.stqe_next)
-
-#define STAILQ_FOREACH(var, head, field)				\
-	for ((var) = STAILQ_FIRST(head);				\
-	    (var) != STAILQ_END(head);					\
-	    (var) = STAILQ_NEXT(var, field))
-
-#define	STAILQ_FOREACH_SAFE(var, head, field, tvar)			\
-	for ((var) = STAILQ_FIRST(head);				\
-	    (var) && ((tvar) = STAILQ_NEXT(var, field), 1);		\
-	    (var) = (tvar))
-
-/*
- * Singly-linked Tail queue functions.
- */
-#define	STAILQ_INIT(head) do {						\
-	STAILQ_FIRST((head)) = NULL;					\
-	(head)->stqh_last = &STAILQ_FIRST((head));			\
-} while (0)
-
-#define	STAILQ_INSERT_HEAD(head, elm, field) do {			\
-	if ((STAILQ_NEXT((elm), field) = STAILQ_FIRST((head))) == NULL)	\
-		(head)->stqh_last = &STAILQ_NEXT((elm), field);		\
-	STAILQ_FIRST((head)) = (elm);					\
-} while (0)
-
-#define	STAILQ_INSERT_TAIL(head, elm, field) do {			\
-	STAILQ_NEXT((elm), field) = NULL;				\
-	*(head)->stqh_last = (elm);					\
-	(head)->stqh_last = &STAILQ_NEXT((elm), field);			\
-} while (0)
-
-#define	STAILQ_INSERT_AFTER(head, listelm, elm, field) do {		\
-	if ((STAILQ_NEXT((elm), field) = STAILQ_NEXT((elm), field)) == NULL)\
-		(head)->stqh_last = &STAILQ_NEXT((elm), field);		\
-	STAILQ_NEXT((elm), field) = (elm);				\
-} while (0)
-
-#define STAILQ_REMOVE_HEAD(head, field) do {                            \
-	if ((STAILQ_FIRST((head)) =					\
-	    STAILQ_NEXT(STAILQ_FIRST((head)), field)) == NULL)		\
-		(head)->stqh_last = &STAILQ_FIRST((head));		\
-} while (0)
-
-#define STAILQ_REMOVE_AFTER(head, elm, field) do {                      \
-	if ((STAILQ_NEXT(elm, field) =					\
-	    STAILQ_NEXT(STAILQ_NEXT(elm, field), field)) == NULL)	\
-		(head)->stqh_last = &STAILQ_NEXT((elm), field);		\
-} while (0)
-
-#define	STAILQ_REMOVE(head, elm, type, field) do {			\
-	if (STAILQ_FIRST((head)) == (elm)) {				\
-		STAILQ_REMOVE_HEAD((head), field);			\
-	} else {							\
-		struct type *curelm = (head)->stqh_first;		\
-		while (STAILQ_NEXT(curelm, field) != (elm))		\
-			curelm = STAILQ_NEXT(curelm, field);		\
-		STAILQ_REMOVE_AFTER(head, curelm, field);		\
-	}								\
-} while (0)
-
-#define	STAILQ_CONCAT(head1, head2) do {				\
-	if (!STAILQ_EMPTY((head2))) {					\
-		*(head1)->stqh_last = (head2)->stqh_first;		\
-		(head1)->stqh_last = (head2)->stqh_last;		\
-		STAILQ_INIT((head2));					\
-	}								\
-} while (0)
-
-#define	STAILQ_LAST(head, type, field)					\
-	(STAILQ_EMPTY((head)) ?	NULL :					\
-	        ((struct type *)(void *)				\
-		((char *)((head)->stqh_last) - offsetof(struct type, field))))
 
 #endif	/* !_SYS_QUEUE_H_ */

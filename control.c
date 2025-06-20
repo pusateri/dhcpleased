@@ -17,6 +17,7 @@
  */
 #include <sys/types.h>
 #include <sys/queue.h>
+#include "compat/queue.h"
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -28,10 +29,18 @@
 
 #include <errno.h>
 #include <event.h>
+#if defined(__OpenBSD__)
 #include <imsg.h>
+#else
+#include "compat/imsg.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
 
 #include "log.h"
 #include "dhcpleased.h"

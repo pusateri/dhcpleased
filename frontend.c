@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/queue.h>
+#include "compat/queue.h"
 #include <sys/socket.h>
 #include <sys/syslog.h>
 #include <sys/uio.h>
@@ -41,13 +42,21 @@
 #include <errno.h>
 #include <event.h>
 #include <ifaddrs.h>
+#if defined(__OpenBSD__)
 #include <imsg.h>
+#else
+#include "compat/imsg.h"
+#endif
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
 
 #include "bpf.h"
 #include "log.h"
@@ -87,7 +96,9 @@ void		 handle_route_message(struct rt_msghdr *, struct sockaddr **);
 void		 get_rtaddrs(int, struct sockaddr *, struct sockaddr **);
 void		 bpf_receive(int, short, void *);
 int		 get_flags(char *);
+#ifdef SIOCGIFXFLAGS
 int		 get_xflags(char *);
+#endif /* SIOCGIFXFLAGS */
 struct iface	*get_iface_by_id(uint32_t);
 void		 remove_iface(uint32_t);
 void		 set_bpfsock(int, uint32_t);
@@ -146,10 +157,12 @@ frontend(int debug, int verbose)
 	if (chdir("/") == -1)
 		fatal("chdir(\"/\")");
 
+#if HAVE_PLEDGE
 	if (unveil("/", "") == -1)
 		fatal("unveil /");
 	if (unveil(NULL, NULL) == -1)
 		fatal("unveil");
+#endif /* HAVE_PLEDGE */
 
 	setproctitle("%s", "frontend");
 	log_procinit("frontend");
@@ -162,8 +175,10 @@ frontend(int debug, int verbose)
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
 		fatal("can't drop privileges");
 
+#if HAVE_PLEDGE
 	if (pledge("stdio unix recvfd route", NULL) == -1)
 		fatal("pledge");
+#endif /* HAVE_PLEDGE */
 	event_init();
 
 	/* Setup signal handler. */
@@ -577,6 +592,7 @@ get_flags(char *if_name)
 	return ifr.ifr_flags;
 }
 
+#ifdef SIOCGIFXFLAGS
 int
 get_xflags(char *if_name)
 {
@@ -589,6 +605,7 @@ get_xflags(char *if_name)
 	}
 	return ifr.ifr_flags;
 }
+#endif /* SIOCGIFXFLAGS */
 
 void
 update_iface(struct if_msghdr *ifm, struct sockaddr_dl *sdl)
@@ -596,13 +613,18 @@ update_iface(struct if_msghdr *ifm, struct sockaddr_dl *sdl)
 	struct iface		*iface;
 	struct imsg_ifinfo	 ifinfo;
 	uint32_t		 if_index;
-	int			 flags, xflags;
+	int			 flags;
+#ifdef SIOCGIFXFLAGS
+	int			 xflags;
+#endif /* SIOCGIFXFLAGS */
 	char			 ifnamebuf[IF_NAMESIZE], *if_name;
 
 	if_index = ifm->ifm_index;
 
 	flags = ifm->ifm_flags;
+#ifdef SIOCGIFXFLAGS
 	xflags = ifm->ifm_xflags;
+#endif /* SIOCGIFXFLAGS */
 
 	iface = get_iface_by_id(if_index);
 	if_name = if_indextoname(if_index, ifnamebuf);
@@ -617,6 +639,7 @@ update_iface(struct if_msghdr *ifm, struct sockaddr_dl *sdl)
 		return;
 	}
 
+#ifdef SIOCGIFXFLAGS
 	if (!(xflags & IFXF_AUTOCONF4)) {
 		if (iface != NULL) {
 			log_info("Removed autoconf flag from %s", if_name);
@@ -626,18 +649,26 @@ update_iface(struct if_msghdr *ifm, struct sockaddr_dl *sdl)
 		}
 		return;
 	}
+#endif /* SIOCGIFXFLAGS */
 
 	memset(&ifinfo, 0, sizeof(ifinfo));
 	ifinfo.if_index = if_index;
 	ifinfo.link_state = ifm->ifm_data.ifi_link_state;
+#ifdef RTABLE_ANY
 	ifinfo.rdomain = ifm->ifm_tableid;
+#endif /* RTABLE_ANY */
 	ifinfo.running = (flags & (IFF_UP | IFF_RUNNING)) ==
 	    (IFF_UP | IFF_RUNNING);
 
+#if defined(__OpenBSD__)
 	if (sdl != NULL && (sdl->sdl_type == IFT_ETHER ||
 	    sdl->sdl_type == IFT_CARP) && sdl->sdl_alen == ETHER_ADDR_LEN)
 		memcpy(ifinfo.hw_address.ether_addr_octet, LLADDR(sdl),
 		    ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+	if (sdl != NULL && sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADDR_LEN)
+		memcpy(ifinfo.hw_address.octet, LLADDR(sdl), ETHER_ADDR_LEN);
+#endif
 	else if (iface == NULL) {
 		log_warnx("Could not find AF_LINK address for %s.", if_name);
 		return;
@@ -673,8 +704,10 @@ frontend_startup(void)
 		    "process", __func__);
 
 	init_ifaces();
+#if HAVE_PLEDGE
 	if (pledge("stdio unix recvfd", NULL) == -1)
 		fatal("pledge");
+#endif /* HAVE_PLEDGE */
 	event_add(&ev_route, NULL);
 }
 
@@ -686,7 +719,10 @@ init_ifaces(void)
 	struct if_nameindex	*ifnidxp, *ifnidx;
 	struct ifaddrs		*ifap, *ifa;
 	uint32_t		 if_index;
-	int			 flags, xflags;
+	int			 flags;
+#ifdef SIOCGIFXFLAGS
+	int			 xflags;
+#endif /* SIOCGIFXFLAGS */
 	char			*if_name;
 
 	if ((ifnidxp = if_nameindex()) == NULL)
@@ -701,10 +737,12 @@ init_ifaces(void)
 		if_name = ifnidx->if_name;
 		if ((flags = get_flags(if_name)) == -1)
 			continue;
+#ifdef SIOCGIFXFLAGS
 		if ((xflags = get_xflags(if_name)) == -1)
 			continue;
 		if (!(xflags & IFXF_AUTOCONF4))
 			continue;
+#endif /* SIOCGIFXFLAGS */
 
 		memset(&ifinfo, 0, sizeof(ifinfo));
 		ifinfo.if_index = if_index;
@@ -724,16 +762,26 @@ init_ifaces(void)
 				struct sockaddr_dl	*sdl;
 
 				sdl = (struct sockaddr_dl *)ifa->ifa_addr;
+#if defined(__OpenBSD__)
 				if ((sdl->sdl_type != IFT_ETHER &&
 				    sdl->sdl_type != IFT_CARP) ||
 				    sdl->sdl_alen != ETHER_ADDR_LEN)
 					continue;
 				memcpy(ifinfo.hw_address.ether_addr_octet,
 				    LLADDR(sdl), ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+				if (sdl->sdl_type != IFT_ETHER ||
+				    sdl->sdl_alen != ETHER_ADDR_LEN)
+					continue;
+				memcpy(ifinfo.hw_address.octet,
+				    LLADDR(sdl), ETHER_ADDR_LEN);
+#endif
 
 				if_data = (struct if_data *)ifa->ifa_data;
 				ifinfo.link_state = if_data->ifi_link_state;
+#ifdef RTABLE_ANY
 				ifinfo.rdomain = if_data->ifi_rdomain;
+#endif /* RTABLE_ANY */
 				goto out;
 			}
 			default:
@@ -793,7 +841,11 @@ route_receive(int fd, short events, void *arg)
 	if (rtm->rtm_version != RTM_VERSION)
 		return;
 
+#if defined(__OpenBSD__)
 	sa = (struct sockaddr *)(buf + rtm->rtm_hdrlen);
+#elif defined(__FreeBSD__)
+	sa = (struct sockaddr *)(buf + sizeof(struct rt_msghdr));
+#endif
 	get_rtaddrs(rtm->rtm_addrs, sa, rti_info);
 
 	handle_route_message(rtm, rti_info);
@@ -822,6 +874,7 @@ handle_route_message(struct rt_msghdr *rtm, struct sockaddr **rti_info)
 			remove_iface(if_index);
 		}
 		break;
+#ifdef RTM_PROPOSAL
 	case RTM_PROPOSAL:
 		if (rtm->rtm_priority == RTP_PROPOSAL_SOLICIT) {
 			log_debug("RTP_PROPOSAL_SOLICIT");
@@ -829,6 +882,7 @@ handle_route_message(struct rt_msghdr *rtm, struct sockaddr **rti_info)
 			    0, 0, NULL, 0);
 		}
 		break;
+#endif /* RTM_PROPOSAL */
 	default:
 		log_debug("unexpected RTM: %d", rtm->rtm_type);
 		break;
@@ -897,7 +951,9 @@ bpf_receive(int fd, short events, void *arg)
 		}
 		memcpy(&imsg_dhcp.packet, p + hdr->bh_hdrlen, hdr->bh_caplen);
 		imsg_dhcp.len = hdr->bh_caplen;
+#if defined(__OpenBSD__)
 		imsg_dhcp.csumflags = hdr->bh_csumflags;
+#endif
 		frontend_imsg_compose_engine(IMSG_DHCP, 0, 0, &imsg_dhcp,
 		    sizeof(imsg_dhcp));
  cont:
@@ -983,12 +1039,12 @@ build_packet(uint8_t message_type, char *if_name, uint32_t xid,
 	} else
 #endif /* SMALL */
 	{
-		if (gethostname(dhcp_hostname + 2,
+		if (gethostname((char *)(dhcp_hostname + 2),
 		    sizeof(dhcp_hostname) - 2) == 0 &&
 		    dhcp_hostname[2] != '\0') {
-			if ((c = strchr(dhcp_hostname + 2, '.')) != NULL)
+			if ((c = strchr((const char *)(dhcp_hostname + 2), '.')) != NULL)
 				*c = '\0';
-			dhcp_hostname[1] = strlen(dhcp_hostname + 2);
+			dhcp_hostname[1] = strlen((char *)(dhcp_hostname + 2));
 			memcpy(p, dhcp_hostname, dhcp_hostname[1] + 2);
 			p += dhcp_hostname[1] + 2;
 		}

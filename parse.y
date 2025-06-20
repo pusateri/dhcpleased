@@ -25,6 +25,7 @@
 %{
 #include <sys/types.h>
 #include <sys/queue.h>
+#include "compat/queue.h"
 #include <sys/socket.h>
 #include <sys/stat.h>
 
@@ -39,7 +40,11 @@
 #include <err.h>
 #include <errno.h>
 #include <event.h>
+#if defined(__OpenBSD__)
 #include <imsg.h>
+#else
+#include "compat/imsg.h"
+#endif
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -47,6 +52,10 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <vis.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
 
 #include "log.h"
 #include "dhcpleased.h"
@@ -187,7 +196,11 @@ ifaceoptsl	: SEND VENDOR CLASS ID STRING {
 				YYERROR;
 			}
 
+#if defined(__OpenBSD__)
 			len = strnunvis(buf, $5, sizeof(buf));
+#elif defined(__FreeBSD__)
+			len = strnunvis(buf, sizeof(buf), $5);
+#endif
 			free($5);
 
 			if (len == -1) {
@@ -241,7 +254,11 @@ ifaceoptsl	: SEND VENDOR CLASS ID STRING {
 			free(hex);
 
 			if (not_hex) {
+#if defined(__OpenBSD__)
 				len = strnunvis(buf, $4, sizeof(buf));
+#elif defined(__FreeBSD__)
+				len = strnunvis(buf, sizeof(buf), $4);
+#endif
 				free($4);
 
 				if (len == -1) {

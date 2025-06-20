@@ -588,7 +588,9 @@ ibuf_free(struct ibuf *buf)
 		abort();
 	if (buf->fd >= 0)
 		close(buf->fd);
+#if defined(__OpenBSD__)
 	freezero(buf->buf, buf->size);
+#endif
 	free(buf);
 	errno = save_errno;
 }
@@ -686,7 +688,9 @@ msgbuf_queuelen(struct msgbuf *msgbuf)
 void
 msgbuf_clear(struct msgbuf *msgbuf)
 {
+#if defined(__OpenBSD__)
 	struct ibuf	*buf;
+#endif
 
 	/* write side */
 	ibufq_flush(&msgbuf->bufs);

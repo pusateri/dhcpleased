@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/queue.h>
+#include "compat/queue.h"
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syslog.h>
@@ -30,6 +31,9 @@
 
 #include <net/if.h>
 #include <net/route.h>
+#ifndef ROUTE_FILTER
+#define ROUTE_FILTER(m) (1 << (m))
+#endif
 #include <net/if_dl.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -42,7 +46,11 @@
 #include <fcntl.h>
 #include <event.h>
 #include <ifaddrs.h>
+#if defined(__OpenBSD__)
 #include <imsg.h>
+#else
+#include "compat/imsg.h"
+#endif
 #include <netdb.h>
 #include <pwd.h>
 #include <stddef.h>
@@ -51,6 +59,10 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
+
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
 
 #include "bpf.h"
 #include "log.h"
@@ -77,7 +89,9 @@ void	 main_dispatch_engine(int, short, void *);
 void	 open_bpfsock(uint32_t);
 void	 configure_interface(struct imsg_configure_interface *);
 void	 deconfigure_interface(struct imsg_configure_interface *);
+#ifdef RTA_DNS
 void	 propose_rdns(struct imsg_propose_rdns *);
+#endif /* RTA_DNS */
 void	 configure_routes(uint8_t, struct imsg_configure_interface *);
 void	 configure_route(uint8_t, uint32_t, int, struct sockaddr_in *, struct
 	     sockaddr_in *, struct sockaddr_in *, struct sockaddr_in *, int);
@@ -150,8 +164,14 @@ main(int argc, char *argv[])
 	char			*saved_argv0;
 	int			 pipe_main2frontend[2];
 	int			 pipe_main2engine[2];
-	int			 frontend_routesock, rtfilter, lockfd;
+	int			 frontend_routesock;
+#ifdef ROUTE_MSGFILTER
+	int			 rtfilter;
+#endif /* ROUTE_MSGFILTER */
+	int			 lockfd;
+#ifdef RTABLE_ANY
 	int			 rtable_any = RTABLE_ANY;
+#endif /* RTABLE_ANY */
 	char			*csock = _PATH_DHCPLEASED_SOCKET;
 #ifndef SMALL
 	int			 control_fd;
@@ -237,10 +257,18 @@ main(int argc, char *argv[])
 	if (!debug)
 		daemon(0, 0);
 
+#ifdef SOCK_CLOEXEC
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+#else
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK,
+#endif
 	    PF_UNSPEC, pipe_main2frontend) == -1)
 		fatal("main2frontend socketpair");
+#ifdef SOCK_CLOEXEC
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+#else
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK,
+#endif
 	    PF_UNSPEC, pipe_main2engine) == -1)
 		fatal("main2engine socketpair");
 
@@ -252,7 +280,11 @@ main(int argc, char *argv[])
 
 	log_procinit("main");
 
+#ifdef SOCK_CLOEXEC
 	if ((routesock = socket(AF_ROUTE, SOCK_RAW | SOCK_CLOEXEC |
+#else
+	if ((routesock = socket(AF_ROUTE, SOCK_RAW | 
+#endif
 	    SOCK_NONBLOCK, AF_INET)) == -1)
 		fatal("route socket");
 	shutdown(routesock, SHUT_RD);
@@ -296,27 +328,37 @@ main(int argc, char *argv[])
 	if (main_imsg_send_ipc_sockets(&iev_frontend->ibuf, &iev_engine->ibuf))
 		fatal("could not establish imsg links");
 
+#ifdef SOCK_CLOEXEC
 	if ((ioctl_sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
 		fatal("socket");
-
 	if ((frontend_routesock = socket(AF_ROUTE, SOCK_RAW | SOCK_CLOEXEC,
+#else
+	if ((ioctl_sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+		fatal("socket");
+	if ((frontend_routesock = socket(AF_ROUTE, SOCK_RAW,
+#endif /* SOCK_CLOEXEC */
 	    AF_INET)) == -1)
 		fatal("route socket");
 
+#ifdef ROUTE_MSGFILTER
 	rtfilter = ROUTE_FILTER(RTM_IFINFO) | ROUTE_FILTER(RTM_PROPOSAL) |
 	    ROUTE_FILTER(RTM_IFANNOUNCE);
 	if (setsockopt(frontend_routesock, AF_ROUTE, ROUTE_MSGFILTER,
 	    &rtfilter, sizeof(rtfilter)) == -1)
 		fatal("setsockopt(ROUTE_MSGFILTER)");
+#endif /* ROUTE_MSGFILTER */
+#ifdef ROUTE_TABLEFILTER
 	if (setsockopt(frontend_routesock, AF_ROUTE, ROUTE_TABLEFILTER,
 	    &rtable_any, sizeof(rtable_any)) == -1)
 		fatal("setsockopt(ROUTE_TABLEFILTER)");
+#endif /* ROUTE_TABLEFILTER */
 
 #ifndef SMALL
 	if ((control_fd = control_init(csock)) == -1)
 		warnx("control socket setup failed");
 #endif /* SMALL */
 
+#if HAVE_PLEDGE
 	if (unveil(conffile, "r") == -1)
 		fatal("unveil %s", conffile);
 	if (unveil("/dev/bpf", "rw") == -1)
@@ -333,6 +375,7 @@ main(int argc, char *argv[])
 	if (pledge("stdio inet rpath wpath sendfd wroute bpf", NULL) == -1)
 		fatal("pledge");
 #endif
+#endif /* HAVE_PLEDGE */
 	main_imsg_compose_frontend(IMSG_ROUTESOCK, frontend_routesock, NULL, 0);
 
 #ifndef SMALL
@@ -620,6 +663,7 @@ main_dispatch_engine(int fd, short event, void *bula)
 				configure_routes(RTM_DELETE, &imsg_interface);
 			break;
 		}
+#ifdef RTA_DNS
 		case IMSG_PROPOSE_RDNS: {
 			struct imsg_propose_rdns	 rdns;
 
@@ -648,6 +692,7 @@ main_dispatch_engine(int fd, short event, void *bula)
 			propose_rdns(&rdns);
 			break;
 		}
+#endif /* RTA_DNS */
 		default:
 			log_debug("%s: error handling imsg %d", __func__, type);
 			break;
@@ -725,7 +770,11 @@ main_imsg_send_ipc_sockets(struct imsgbuf *frontend_buf,
 {
 	int pipe_frontend2engine[2];
 
+#ifdef SOCK_CLOEXEC
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+#else
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK,
+#endif
 	    PF_UNSPEC, pipe_frontend2engine) == -1)
 		return (-1);
 
@@ -879,6 +928,7 @@ configure_interface(struct imsg_configure_interface *imsg)
 	    sizeof(opt)) == -1)
 		log_warn("setting SO_REUSEADDR on socket");
 
+#ifdef SO_RTABLE
 	if (setsockopt(udpsock, SOL_SOCKET, SO_RTABLE, &imsg->rdomain,
 	    sizeof(imsg->rdomain)) == -1) {
 		/* we might race against removal of the rdomain */
@@ -886,6 +936,7 @@ configure_interface(struct imsg_configure_interface *imsg)
 		close(udpsock);
 		return;
 	}
+#endif /* SO_RTABLE */
 
 	if (bind(udpsock, (struct sockaddr *)req_sin_addr,
 	    sizeof(*req_sin_addr)) == -1) {
@@ -1040,7 +1091,11 @@ configure_routes(uint8_t rtm_type, struct imsg_configure_interface *imsg)
 			/* direct route */
 			configure_route(rtm_type, imsg->if_index,
 			    imsg->rdomain, &dst, &mask, &ifa, NULL,
+#ifdef RTF_CLONING
 			    RTF_CLONING);
+#else
+			    0);
+#endif /* RTF_CLONING */
 		} else if (mask.sin_addr.s_addr == INADDR_ANY) {
 			/* default route */
 			gwnet =  gw.sin_addr.s_addr & imsg->mask.s_addr;
@@ -1054,7 +1109,11 @@ configure_routes(uint8_t rtm_type, struct imsg_configure_interface *imsg)
 				mask.sin_addr.s_addr = 0xffffffff;
 				configure_route(rtm_type, imsg->if_index,
 				    imsg->rdomain, &gw, &mask, &ifa, NULL,
+#ifdef RTF_CLONING
 				    RTF_CLONING);
+#else
+			            0);
+#endif /* RTF_CLONING */
 				mask.sin_addr = imsg->routes[i].mask;
 			}
 
@@ -1085,7 +1144,9 @@ configure_route(uint8_t rtm_type, uint32_t if_index, int rdomain, struct
 {
 	struct rt_msghdr		 rtm;
 	struct sockaddr_dl		 ifp;
+#ifdef RTA_LABEL
 	struct sockaddr_rtlabel		 rl;
+#endif /* RTA_LABEL */
 	struct iovec			 iov[14];
 	long				 pad = 0;
 	int				 iovcnt = 0, padlen;
@@ -1096,12 +1157,24 @@ configure_route(uint8_t rtm_type, uint32_t if_index, int rdomain, struct
 	rtm.rtm_type = rtm_type;
 	rtm.rtm_msglen = sizeof(rtm);
 	rtm.rtm_index = if_index;
+#ifdef RTABLE_ANY
 	rtm.rtm_tableid = rdomain;
+#endif /* RTABLE_ANY */
 	rtm.rtm_seq = ++rtm_seq;
+#ifdef RTP_NONE
 	rtm.rtm_priority = RTP_NONE;
+#endif /* RTP_NONE */
+#ifdef RTA_LABEL
 	rtm.rtm_addrs = RTA_DST | RTA_GATEWAY | RTA_NETMASK | RTA_IFP |
 	    RTA_LABEL;
+#else
+	rtm.rtm_addrs = RTA_DST | RTA_GATEWAY | RTA_NETMASK | RTA_IFP;
+#endif /* RTA_LABEL */
+#ifdef RTF_MPATH
 	rtm.rtm_flags = RTF_UP | RTF_STATIC | RTF_MPATH | rtm_flags;
+#else
+	rtm.rtm_flags = RTF_UP | RTF_STATIC | rtm_flags;
+#endif /* RTF_MPATH */
 
 	if (ifa)
 		rtm.rtm_addrs |= RTA_IFA;
@@ -1165,6 +1238,7 @@ configure_route(uint8_t rtm_type, uint32_t if_index, int rdomain, struct
 		}
 	}
 
+#ifdef RTA_LABEL
 	memset(&rl, 0, sizeof(rl));
 	rl.sr_len = sizeof(rl);
 	rl.sr_family = AF_UNSPEC;
@@ -1179,6 +1253,7 @@ configure_route(uint8_t rtm_type, uint32_t if_index, int rdomain, struct
 		iov[iovcnt++].iov_len = padlen;
 		rtm.rtm_msglen += padlen;
 	}
+#endif /* RTA_LABEL */
 
 	if (writev(routesock, iov, iovcnt) == -1) {
 		if (errno != EEXIST)
@@ -1221,6 +1296,7 @@ open_bpfsock(uint32_t if_index)
 	    sizeof(if_index));
 }
 
+#ifdef RTA_DNS
 void
 propose_rdns(struct imsg_propose_rdns *rdns)
 {
@@ -1238,7 +1314,9 @@ propose_rdns(struct imsg_propose_rdns *rdns)
 	rtm.rtm_tableid = rdns->rdomain;
 	rtm.rtm_index = rdns->if_index;
 	rtm.rtm_seq = ++rtm_seq;
+#ifdef RTP_NONE
 	rtm.rtm_priority = RTP_PROPOSAL_DHCLIENT;
+#endif /* RTP_NONE */
 	rtm.rtm_addrs = RTA_DNS;
 	rtm.rtm_flags = RTF_UP;
 
@@ -1263,6 +1341,7 @@ propose_rdns(struct imsg_propose_rdns *rdns)
 	if (writev(routesock, iov, iovcnt) == -1)
 		log_warn("failed to propose nameservers");
 }
+#endif /* RTA_DNS */
 
 void
 read_lease_file(struct imsg_ifinfo *imsg_ifinfo)

@@ -24,6 +24,10 @@
 #include <errno.h>
 #include <time.h>
 
+#ifndef __dead
+#define __dead		__attribute__((__noreturn__))
+#endif
+
 #include "log.h"
 
 static int		 debug;
