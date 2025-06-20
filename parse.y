@@ -24,8 +24,11 @@
 
 %{
 #include <sys/types.h>
+#if defined(__OpenBSD__)
 #include <sys/queue.h>
-#include "compat/queue.h"
+#else
+#include "queue.h"
+#endif
 #include <sys/socket.h>
 #include <sys/stat.h>
 
@@ -43,7 +46,7 @@
 #if defined(__OpenBSD__)
 #include <imsg.h>
 #else
-#include "compat/imsg.h"
+#include "imsg.h"
 #endif
 #include <limits.h>
 #include <stdarg.h>
