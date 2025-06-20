@@ -210,12 +210,12 @@ engine(int debug, int verbose)
 	if (chdir("/") == -1)
 		fatal("chdir(\"/\")");
 
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 	if (unveil("/", "") == -1)
 		fatal("unveil /");
 	if (unveil(NULL, NULL) == -1)
 		fatal("unveil");
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 
 	setproctitle("%s", "engine");
 	log_procinit("engine");
@@ -225,10 +225,10 @@ engine(int debug, int verbose)
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
 		fatal("can't drop privileges");
 
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 	if (pledge("stdio recvfd", NULL) == -1)
 		fatal("pledge");
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 
 	event_init();
 
@@ -476,10 +476,10 @@ engine_dispatch_main(int fd, short event, void *bula)
 			    iev_frontend);
 			event_add(&iev_frontend->ev, NULL);
 
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 			if (pledge("stdio", NULL) == -1)
 				fatal("pledge");
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 
 			break;
 		case IMSG_UPDATE_IF:

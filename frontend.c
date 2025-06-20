@@ -157,12 +157,12 @@ frontend(int debug, int verbose)
 	if (chdir("/") == -1)
 		fatal("chdir(\"/\")");
 
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 	if (unveil("/", "") == -1)
 		fatal("unveil /");
 	if (unveil(NULL, NULL) == -1)
 		fatal("unveil");
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 
 	setproctitle("%s", "frontend");
 	log_procinit("frontend");
@@ -175,10 +175,10 @@ frontend(int debug, int verbose)
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
 		fatal("can't drop privileges");
 
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 	if (pledge("stdio unix recvfd route", NULL) == -1)
 		fatal("pledge");
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 	event_init();
 
 	/* Setup signal handler. */
@@ -704,10 +704,10 @@ frontend_startup(void)
 		    "process", __func__);
 
 	init_ifaces();
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 	if (pledge("stdio unix recvfd", NULL) == -1)
 		fatal("pledge");
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 	event_add(&ev_route, NULL);
 }
 

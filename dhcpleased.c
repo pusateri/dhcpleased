@@ -358,7 +358,7 @@ main(int argc, char *argv[])
 		warnx("control socket setup failed");
 #endif /* SMALL */
 
-#if HAVE_PLEDGE
+#if defined(__OpenBSD__)
 	if (unveil(conffile, "r") == -1)
 		fatal("unveil %s", conffile);
 	if (unveil("/dev/bpf", "rw") == -1)
@@ -375,7 +375,7 @@ main(int argc, char *argv[])
 	if (pledge("stdio inet rpath wpath sendfd wroute bpf", NULL) == -1)
 		fatal("pledge");
 #endif
-#endif /* HAVE_PLEDGE */
+#endif /* OpenBSD */
 	main_imsg_compose_frontend(IMSG_ROUTESOCK, frontend_routesock, NULL, 0);
 
 #ifndef SMALL
