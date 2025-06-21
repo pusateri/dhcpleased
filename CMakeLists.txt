@@ -4,7 +4,7 @@ project(dhcpleased)
 
 find_package(BISON)
 if(BISON_FOUND)
-  bison_target(dhcpleased parse.y ${CMAKE_CURRENT_BINARY_DIR}/parse.tab.c)
+    bison_target(dhcpleased parse.y ${CMAKE_CURRENT_BINARY_DIR}/parse.tab.c)
 endif()
 
 find_package(PkgConfig)
@@ -14,14 +14,14 @@ check_symbol_exists(timespecsub "sys/time.h" HAVE_TIMESPECSUB)
 check_symbol_exists(reallocarray "stdlib.h" HAVE_REALLOCARRAY)
 
 set(
-	HEADER_FILES
-	bpf.h
-	checksum.h
-	control.h
-	dhcpleased.h
-	engine.h
-	frontend.h
-	log.h
+    HEADER_FILES
+    bpf.h
+    checksum.h
+    control.h
+    dhcpleased.h
+    engine.h
+    frontend.h
+    log.h
 )
 
 add_library(
@@ -34,7 +34,9 @@ add_library(
     compat/reallocarray.h
 )
 
-if(NOT HAVE_TIMESPECSUB)
+if(HAVE_TIMESPECSUB)
+    list(APPEND CMAKE_C_FLAGS "-DHAVE_TIMESPECSUB")
+else()
     add_library(
         timespec
         timespec/timespec.c
@@ -43,17 +45,17 @@ if(NOT HAVE_TIMESPECSUB)
 endif()
 
 add_executable(
-	dhcpleased
-	bpf.c
-	checksum.c
-	control.c
-	dhcpleased.c
-	engine.c
-	frontend.c
-	log.c
-	printconf.c
-	${HEADER_FILES}
-	${BISON_dhcpleased_OUTPUTS}
+    dhcpleased
+    bpf.c
+    checksum.c
+    control.c
+    dhcpleased.c
+    engine.c
+    frontend.c
+    log.c
+    printconf.c
+    ${HEADER_FILES}
+    ${BISON_dhcpleased_OUTPUTS}
 )
 
 pkg_check_modules(LIBEVENT REQUIRED libevent)
@@ -62,9 +64,20 @@ target_include_directories(
     dhcpleased
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     PRIVATE compat
-    PRIVATE timespec
     PRIVATE ${LIBEVENT_INCLUDE_DIRS}
 )
+
+if(NOT HAVE_TIMESPECSUB)
+    target_include_directories(
+        dhcpleased
+        PRIVATE timespec
+    )
+endif()
+
 target_link_libraries(dhcpleased compat)
-target_link_libraries(dhcpleased timespec)
+
+if(NOT HAVE_TIMESPECSUB)
+    target_link_libraries(dhcpleased timespec)
+endif()
+
 target_link_libraries(dhcpleased ${LIBEVENT_LDFLAGS})
