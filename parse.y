@@ -43,11 +43,7 @@
 #include <err.h>
 #include <errno.h>
 #include <event.h>
-#if defined(__OpenBSD__)
 #include <imsg.h>
-#else
-#include "imsg.h"
-#endif
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>

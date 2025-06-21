@@ -16,8 +16,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include <sys/types.h>
+#if defined(__OpenBSD__)
 #include <sys/queue.h>
-#include "compat/queue.h"
+#else
+#include "queue.h"
+#endif /* __OpenBSD__ */
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -32,11 +35,7 @@
 #include <fcntl.h>
 #endif /* SOCK_CLOEXEC */
 #include <event.h>
-#if defined(__OpenBSD__)
 #include <imsg.h>
-#else
-#include "compat/imsg.h"
-#endif
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>

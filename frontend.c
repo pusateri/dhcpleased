@@ -20,8 +20,11 @@
  */
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#if defined(__OpenBSD__)
 #include <sys/queue.h>
-#include "compat/queue.h"
+#else
+#include "queue.h"
+#endif /* __OpenBSD__ */
 #include <sys/socket.h>
 #include <sys/syslog.h>
 #include <sys/uio.h>
@@ -45,11 +48,7 @@
 #endif /* SOCK_CLOEXEC */
 #include <event.h>
 #include <ifaddrs.h>
-#if defined(__OpenBSD__)
 #include <imsg.h>
-#else
-#include "compat/imsg.h"
-#endif
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>

@@ -18,8 +18,11 @@
  */
 
 #include <sys/types.h>
+#if defined(__OpenBSD__)
 #include <sys/queue.h>
-#include "compat/queue.h"
+#else
+#include "queue.h"
+#endif /* __OpenBSD__ */
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -31,11 +34,7 @@
 #include <arpa/inet.h>
 
 #include <event.h>
-#if defined(__OpenBSD__)
 #include <imsg.h>
-#else
-#include "compat/imsg.h"
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <vis.h>
