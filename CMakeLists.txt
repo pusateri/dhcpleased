@@ -51,4 +51,4 @@ target_include_directories(
     PRIVATE ${LIBEVENT_INCLUDE_DIRS}
 )
 target_link_libraries(dhcpleased compat)
-target_link_libraries(dhcpleased ${CMAKE_PKG_CONFIG_LIBDIRS})
+target_link_libraries(dhcpleased ${LIBEVENT_LDFLAGS})
