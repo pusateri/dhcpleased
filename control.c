@@ -28,6 +28,9 @@
 #include <netinet/if_ether.h>
 
 #include <errno.h>
+#ifndef SOCK_CLOEXEC
+#include <fcntl.h>
+#endif /* SOCK_CLOEXEC */
 #include <event.h>
 #if defined(__OpenBSD__)
 #include <imsg.h>
@@ -73,11 +76,22 @@ control_init(char *path)
 	int			 fd;
 	mode_t			 old_umask;
 
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
 	if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
 	    0)) == -1) {
 		log_warn("%s: socket", __func__);
 		return (-1);
 	}
+#else
+	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+		log_warn("%s: socket", __func__);
+		return (-1);
+	}
+    if (fcntl(fd, F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: socket fcntl", __func__);
+		return (-1);
+    }
+#endif /* SOCK_CLOEXEC && SOCK_NONBLOCK */
 
 	memset(&sun, 0, sizeof(sun));
 	sun.sun_family = AF_UNIX;
@@ -142,6 +156,7 @@ control_accept(int listenfd, short event, void *bula)
 		return;
 
 	len = sizeof(sun);
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
 	if ((connfd = accept4(listenfd, (struct sockaddr *)&sun, &len,
 	    SOCK_CLOEXEC | SOCK_NONBLOCK)) == -1) {
 		/*
@@ -158,6 +173,28 @@ control_accept(int listenfd, short event, void *bula)
 			log_warn("%s: accept4", __func__);
 		return;
 	}
+#else
+    connfd = accept(listenfd, (struct sockaddr *)&sun, &len);
+	if (connfd == -1) {
+		/*
+		 * Pause accept if we are out of file descriptors, or
+		 * libevent will haunt us here too.
+		 */
+		if (errno == ENFILE || errno == EMFILE) {
+			struct timeval evtpause = { 1, 0 };
+
+			event_del(&control_state.ev);
+			evtimer_add(&control_state.evt, &evtpause);
+		} else if (errno != EWOULDBLOCK && errno != EINTR &&
+		    errno != ECONNABORTED)
+			log_warn("%s: accept4", __func__);
+		return;
+	}
+    if (fcntl(connfd, F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: accept fcntl", __func__);
+		return;
+    }
+#endif /* SOCK_CLOEXEC && SOCK_NONBLOCK */
 
 	if ((c = calloc(1, sizeof(struct ctl_conn))) == NULL) {
 		log_warn("%s: calloc", __func__);

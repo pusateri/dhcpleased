@@ -9,6 +9,10 @@ endif()
 
 find_package(PkgConfig)
 
+include(CheckSymbolExists)
+check_symbol_exists(timespecsub "sys/time.h" HAVE_TIMESPECSUB)
+check_symbol_exists(reallocarray "stdlib.h" HAVE_REALLOCARRAY)
+
 set(
 	HEADER_FILES
 	bpf.h
@@ -21,12 +25,22 @@ set(
 )
 
 add_library(
-	compat 
-	compat/imsg-buffer.c
-	compat/imsg.c
-	compat/imsg.h
-	compat/queue.h
+    compat 
+    compat/imsg-buffer.c
+    compat/imsg.c
+    compat/imsg.h
+    compat/queue.h
+    compat/reallocarray.c
+    compat/reallocarray.h
 )
+
+if(NOT HAVE_TIMESPECSUB)
+    add_library(
+        timespec
+        timespec/timespec.c
+        timespec/timespec.h
+    )
+endif()
 
 add_executable(
 	dhcpleased
@@ -48,7 +62,9 @@ target_include_directories(
     dhcpleased
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     PRIVATE compat
+    PRIVATE timespec
     PRIVATE ${LIBEVENT_INCLUDE_DIRS}
 )
 target_link_libraries(dhcpleased compat)
+target_link_libraries(dhcpleased timespec)
 target_link_libraries(dhcpleased ${LIBEVENT_LDFLAGS})

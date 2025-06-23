@@ -40,6 +40,9 @@
 #include <arpa/inet.h>
 
 #include <errno.h>
+#ifndef SOCK_CLOEXEC
+#include <fcntl.h>
+#endif /* SOCK_CLOEXEC */
 #include <event.h>
 #include <ifaddrs.h>
 #if defined(__OpenBSD__)
@@ -164,16 +167,38 @@ frontend(int debug, int verbose)
 		fatal("unveil");
 #endif /* OpenBSD */
 
+#if !defined(__APPLE__)
 	setproctitle("%s", "frontend");
+#endif /* __APPLE__ */
 	log_procinit("frontend");
 
+#ifdef SOCK_CLOEXEC
 	if ((ioctlsock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
 		fatal("socket");
+#else
+	if ((ioctlsock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+		fatal("socket");
+    if (fcntl(ioctlsock, F_SETFL, O_CLOEXEC) == -1) {
+		fatal("socket");
+    }
+#endif /* SOCK_CLOEXEC */
 
+#if !defined(__APPLE__)
 	if (setgroups(1, &pw->pw_gid) ||
 	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
 		fatal("can't drop privileges");
+#else
+	if (setgroups(1, &pw->pw_gid) < 0) {
+		fatal("setgroups: can't drop privileges");
+    }
+    if (setregid(pw->pw_gid, pw->pw_gid) < 0) {
+		fatal("setregid: can't drop privileges");
+    }
+    if (setreuid(pw->pw_uid, pw->pw_uid) < 0) {
+		fatal("setreuid: can't drop privileges");
+    }
+#endif /* __APPLE__ */
 
 #if defined(__OpenBSD__)
 	if (pledge("stdio unix recvfd route", NULL) == -1)
@@ -653,7 +678,9 @@ update_iface(struct if_msghdr *ifm, struct sockaddr_dl *sdl)
 
 	memset(&ifinfo, 0, sizeof(ifinfo));
 	ifinfo.if_index = if_index;
+#if !defined(__APPLE__)
 	ifinfo.link_state = ifm->ifm_data.ifi_link_state;
+#endif /* !__APPLE__ */
 #ifdef RTABLE_ANY
 	ifinfo.rdomain = ifm->ifm_tableid;
 #endif /* RTABLE_ANY */
@@ -665,7 +692,7 @@ update_iface(struct if_msghdr *ifm, struct sockaddr_dl *sdl)
 	    sdl->sdl_type == IFT_CARP) && sdl->sdl_alen == ETHER_ADDR_LEN)
 		memcpy(ifinfo.hw_address.ether_addr_octet, LLADDR(sdl),
 		    ETHER_ADDR_LEN);
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 	if (sdl != NULL && sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADDR_LEN)
 		memcpy(ifinfo.hw_address.octet, LLADDR(sdl), ETHER_ADDR_LEN);
 #endif
@@ -778,7 +805,9 @@ init_ifaces(void)
 #endif
 
 				if_data = (struct if_data *)ifa->ifa_data;
+#if !defined(__APPLE__)
 				ifinfo.link_state = if_data->ifi_link_state;
+#endif /* !__APPLE__ */
 #ifdef RTABLE_ANY
 				ifinfo.rdomain = if_data->ifi_rdomain;
 #endif /* RTABLE_ANY */
@@ -865,6 +894,7 @@ handle_route_message(struct rt_msghdr *rtm, struct sockaddr **rti_info)
 			sdl = (struct sockaddr_dl *)rti_info[RTAX_IFP];
 		update_iface((struct if_msghdr *)rtm, sdl);
 		break;
+#ifdef RTM_IFANNOUNCE
 	case RTM_IFANNOUNCE:
 		ifan = (struct if_announcemsghdr *)rtm;
 		if_index = ifan->ifan_index;
@@ -874,6 +904,7 @@ handle_route_message(struct rt_msghdr *rtm, struct sockaddr **rti_info)
 			remove_iface(if_index);
 		}
 		break;
+#endif /* RTM_IFANNOUNCE */
 #ifdef RTM_PROPOSAL
 	case RTM_PROPOSAL:
 		if (rtm->rtm_priority == RTP_PROPOSAL_SOLICIT) {

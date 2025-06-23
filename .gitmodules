@@ -1,0 +1,3 @@
+[submodule "timespec"]
+	path = timespec
+	url = https://github.com/solemnwarning/timespec.git

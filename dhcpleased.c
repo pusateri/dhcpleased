@@ -257,20 +257,39 @@ main(int argc, char *argv[])
 	if (!debug)
 		daemon(0, 0);
 
-#ifdef SOCK_CLOEXEC
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
-#else
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK,
-#endif
 	    PF_UNSPEC, pipe_main2frontend) == -1)
 		fatal("main2frontend socketpair");
-#ifdef SOCK_CLOEXEC
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
 #else
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK,
-#endif
+	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, pipe_main2frontend) == -1)
+		fatal("main2frontend socketpair");
+    if (fcntl(pipe_main2frontend[0], F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: main2frontend[0] fcntl", __func__);
+		return (-1);
+    }
+    if (fcntl(pipe_main2frontend[1], F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: main2frontend[1] fcntl", __func__);
+		return (-1);
+    }
+#endif /* SOCK_CLOEXEC && SOCK_NONBLOCK */
+
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
 	    PF_UNSPEC, pipe_main2engine) == -1)
 		fatal("main2engine socketpair");
+#else
+	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, pipe_main2engine) == -1)
+		fatal("pipe_main2engine socketpair");
+    if (fcntl(pipe_main2engine[0], F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: pipe_main2engine[0] fcntl", __func__);
+		return (-1);
+    }
+    if (fcntl(pipe_main2engine[1], F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: pipe_main2engine[1] fcntl", __func__);
+		return (-1);
+    }
+#endif /* SOCK_CLOEXEC && SOCK_NONBLOCK */
 
 	/* Start children. */
 	engine_pid = start_child(PROC_ENGINE, saved_argv0, pipe_main2engine[1],
@@ -280,13 +299,18 @@ main(int argc, char *argv[])
 
 	log_procinit("main");
 
-#ifdef SOCK_CLOEXEC
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
 	if ((routesock = socket(AF_ROUTE, SOCK_RAW | SOCK_CLOEXEC |
-#else
-	if ((routesock = socket(AF_ROUTE, SOCK_RAW | 
-#endif
 	    SOCK_NONBLOCK, AF_INET)) == -1)
 		fatal("route socket");
+#else
+	if ((routesock = socket(AF_ROUTE, SOCK_RAW, AF_INET)) == -1)
+		fatal("route socket");
+    if (fcntl(routesock, F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: routesock fcntl", __func__);
+		return (-1);
+    }
+#endif /* SOCK_CLOEXEC && SOCK_NONBLOCK */
 	shutdown(routesock, SHUT_RD);
 
 	event_init();
@@ -472,6 +496,7 @@ start_child(enum dhcpleased_process p, char *argv0, int fd, int debug, int
 
 	execvp(argv0, argv);
 	fatal("execvp");
+    return (0);
 }
 
 void
@@ -770,13 +795,22 @@ main_imsg_send_ipc_sockets(struct imsgbuf *frontend_buf,
 {
 	int pipe_frontend2engine[2];
 
-#ifdef SOCK_CLOEXEC
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
-#else
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK,
-#endif
 	    PF_UNSPEC, pipe_frontend2engine) == -1)
 		return (-1);
+#else
+	if (socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC, pipe_frontend2engine) == -1)
+		return (-1);
+    if (fcntl(pipe_frontend2engine[0], F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: pipe_frontend2engine[0] fcntl", __func__);
+		return (-1);
+    }
+    if (fcntl(pipe_frontend2engine[1], F_SETFL, O_CLOEXEC | O_NONBLOCK) == -1) {
+		log_warn("%s: pipe_frontend2engine[1] fcntl", __func__);
+		return (-1);
+    }
+#endif /* SOCK_CLOEXEC && SOCK_NONBLOCK */
 
 	if (imsg_compose(frontend_buf, IMSG_SOCKET_IPC, 0, 0,
 	    pipe_frontend2engine[0], NULL, 0) == -1)

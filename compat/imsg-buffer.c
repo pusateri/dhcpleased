@@ -24,7 +24,21 @@
 
 #include <limits.h>
 #include <errno.h>
+#if defined(__APPLE__)
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+
+#define htobe16(x) OSSwapHostToBigInt16(x)
+#define htobe32(x) OSSwapHostToBigInt32(x)
+#define htobe64(x) OSSwapHostToBigInt64(x)
+
+#define be16toh(x) OSSwapBigToHostInt16(x)
+#define be32toh(x) OSSwapBigToHostInt32(x)
+#define be64toh(x) OSSwapBigToHostInt64(x)
+
+#else /* __APPLE__ */
 #include <endian.h>
+#endif /* APPLE */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

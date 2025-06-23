@@ -60,6 +60,9 @@
 #define __dead		__attribute__((__noreturn__))
 #endif
 
+#if !defined(HAVE_REALLOCARRAY)
+#include "reallocarray.h"
+#endif
 #include "log.h"
 #include "dhcpleased.h"
 #include "frontend.h"
@@ -110,13 +113,15 @@ static struct iface_conf	*iface_conf;
 
 struct iface_conf	*conf_get_iface(char *);
 
-typedef struct {
+struct value_type {
 	union {
 		int64_t		 number;
 		char		*string;
 	} v;
 	int lineno;
-} YYSTYPE;
+};
+
+#define YYSTYPE struct value_type
 
 %}
 

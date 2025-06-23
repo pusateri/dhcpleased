@@ -47,7 +47,7 @@
 #include <net/if.h>
 #if defined(__OpenBSD__)
 #include <net/ethertypes.h>
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 #include <net/ethernet.h>
 #endif
 #include <netinet/in.h>
@@ -176,6 +176,7 @@ get_bpf_sock(const char *name)
 	if (ioctl(bpffd, BIOCSETF, &p) == -1)
 		fatal("BIOCSETF");
 
+#if !defined(__APPLE__)
 	/* Set up the bpf write filter program structure. */
 	p.bf_len = sizeof(dhcp_bpf_wfilter) / sizeof(struct bpf_insn);
 	p.bf_insns = dhcp_bpf_wfilter;
@@ -185,7 +186,7 @@ get_bpf_sock(const char *name)
 
 	if (ioctl(bpffd, BIOCSETWF, &p) == -1)
 		fatal("BIOCSETWF");
-
+#endif /* !__APPLE__ */
 	strlcpy(ifr.ifr_name, name, IFNAMSIZ);
 	if (ioctl(bpffd, BIOCSETIF, &ifr) == -1) {
 		log_warn("BIOCSETIF"); /* interface might have disappeared */
@@ -193,8 +194,10 @@ get_bpf_sock(const char *name)
 		return -1;
 	}
 
+#if !defined(__APPLE__)
 	if (ioctl(bpffd, BIOCLOCK, NULL) == -1)
 		fatal("BIOCLOCK");
+#endif /* !__APPLE__ */
 
 	return bpffd;
 }

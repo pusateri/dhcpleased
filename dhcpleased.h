@@ -20,17 +20,17 @@
 
 #if defined(__OpenBSD__)
 #define	_PATH_LOCKFILE		"/dev/dhcpleased.lock"
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 #define	_PATH_LOCKFILE		"/var/run/dhcpleased.pid"
 #endif
 #if defined(__OpenBSD__)
 #define	_PATH_CONF_FILE		"/etc/dhcpleased.conf"
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 #define	_PATH_CONF_FILE		"/usr/local/etc/dhcpleased.conf"
 #endif
 #if defined(__OpenBSD__)
 #define	_PATH_DHCPLEASED_SOCKET	"/dev/dhcpleased.sock"
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 #define	_PATH_DHCPLEASED_SOCKET	"/var/run/dhcpleased.sock"
 #endif
 #define	DHCPLEASED_USER		"_dhcp"

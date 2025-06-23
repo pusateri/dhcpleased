@@ -57,9 +57,15 @@
 #endif
 
 #ifndef LINK_STATE_IS_UP
+#if defined(LINK_STATE_UP) && defined(LINK_STATE_UNKNOWN)
 #define LINK_STATE_IS_UP(_s)    \
           ((_s) >= LINK_STATE_UP || (_s) == LINK_STATE_UNKNOWN)
+#endif  /* LINK_STATE_UP && LINK_STATE_UNKNOWN */
 #endif /* LINK_STATE_IS_UP */
+
+#if defined(__APPLE__)
+#include "timespec.h"
+#endif /* __APPLE__ */
 
 #include "checksum.h"
 #include "log.h"
@@ -217,13 +223,27 @@ engine(int debug, int verbose)
 		fatal("unveil");
 #endif /* OpenBSD */
 
+#if !defined(__APPLE__)
 	setproctitle("%s", "engine");
+#endif
 	log_procinit("engine");
 
+#if !defined(__APPLE__)
 	if (setgroups(1, &pw->pw_gid) ||
 	    setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) ||
 	    setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid))
 		fatal("can't drop privileges");
+#else
+	if (setgroups(1, &pw->pw_gid) < 0) {
+		fatal("setgroups: can't drop privileges");
+    }
+    if (setregid(pw->pw_gid, pw->pw_gid) < 0) {
+		fatal("setregid: can't drop privileges");
+    }
+    if (setreuid(pw->pw_uid, pw->pw_uid) < 0) {
+		fatal("setreuid: can't drop privileges");
+    }
+#endif /* __APPLE__ */
 
 #if defined(__OpenBSD__)
 	if (pledge("stdio recvfd", NULL) == -1)
@@ -707,7 +727,11 @@ engine_update_iface(struct imsg_ifinfo *imsg_ifinfo)
 	if (!need_refresh)
 		return;
 
+#if !defined(__APPLE__)
 	if (iface->running && LINK_STATE_IS_UP(iface->link_state)) {
+#else
+	if (iface->running) {
+#endif  /* !__APPLE__ */
 		if (iface->requested_ip.s_addr == INADDR_ANY)
 			parse_lease(iface, imsg_ifinfo);
 
@@ -840,13 +864,22 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 
 #if defined(__OpenBSD__)
 	if ((dhcp->csumflags & M_IPV4_CSUM_IN_OK) == 0 &&
-#elif defined(__FreeBSD__)
-	if ((dhcp->csumflags & CSUM_L3_VALID) == 0 &&
-#endif
 	    wrapsum(checksum((uint8_t *)ip, ip->ip_hl << 2, 0)) != 0) {
 		log_warnx("%s: bad IP checksum", __func__);
 		return;
 	}
+#elif defined(__FreeBSD__)
+	if ((dhcp->csumflags & CSUM_L3_VALID) == 0 &&
+	    wrapsum(checksum((uint8_t *)ip, ip->ip_hl << 2, 0)) != 0) {
+		log_warnx("%s: bad IP checksum", __func__);
+		return;
+	}
+#else
+	if (wrapsum(checksum((uint8_t *)ip, ip->ip_hl << 2, 0)) != 0) {
+		log_warnx("%s: bad IP checksum", __func__);
+		return;
+	}
+#endif
 	if (rem < ntohs(ip->ip_len))
 		goto too_short;
 
@@ -891,9 +924,6 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 
 #if defined(__OpenBSD__)
 	if ((dhcp->csumflags & M_UDP_CSUM_IN_OK) == 0 &&
-#elif defined(__FreeBSD__)
-	if ((dhcp->csumflags & CSUM_L4_VALID) == 0 &&
-#endif
 	    udp->uh_sum != 0) {
 		udp->uh_sum = wrapsum(checksum((uint8_t *)udp, sizeof(*udp),
 		    checksum(p, rem,
@@ -905,6 +935,32 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 			return;
 		}
 	}
+#elif defined(__FreeBSD__)
+	if ((dhcp->csumflags & CSUM_L4_VALID) == 0 &&
+	    udp->uh_sum != 0) {
+		udp->uh_sum = wrapsum(checksum((uint8_t *)udp, sizeof(*udp),
+		    checksum(p, rem,
+		    checksum((uint8_t *)&ip->ip_src, 2 * sizeof(ip->ip_src),
+		    IPPROTO_UDP + ntohs(udp->uh_ulen)))));
+
+		if (udp->uh_sum != 0) {
+			log_warnx("%s: bad UDP checksum", __func__);
+			return;
+		}
+	}
+#else
+	if (udp->uh_sum != 0) {
+		udp->uh_sum = wrapsum(checksum((uint8_t *)udp, sizeof(*udp),
+		    checksum(p, rem,
+		    checksum((uint8_t *)&ip->ip_src, 2 * sizeof(ip->ip_src),
+		    IPPROTO_UDP + ntohs(udp->uh_ulen)))));
+
+		if (udp->uh_sum != 0) {
+			log_warnx("%s: bad UDP checksum", __func__);
+			return;
+		}
+	}
+#endif
 
 	if (log_getverbose() > 1) {
 		log_debug("%s: %s:%d -> %s:%d", __func__, hbuf_src,
@@ -1456,7 +1512,11 @@ state_transition(struct dhcpleased_iface *iface, enum if_state new_state)
 		} else {
 			send_rdns_withdraw(iface);
 			clock_gettime(CLOCK_MONOTONIC, &now);
+#ifdef HAVE_TIMESPECSUB
 			timespecsub(&now, &iface->request_time, &res);
+#else
+			res = timespec_sub(now, iface->request_time);
+#endif /* HAVE_TIMESPECSUB */
 			iface->timo.tv_sec = iface->lease_time - res.tv_sec;
 			if (iface->timo.tv_sec < 0)
 				iface->timo.tv_sec = 0; /* deconfigure now */
@@ -1596,7 +1656,11 @@ iface_timeout(int fd, short events, void *arg)
 		break;
 	case IF_RENEWING:
 		clock_gettime(CLOCK_MONOTONIC, &now);
+#ifdef HAVE_TIMESPECSUB
 		timespecsub(&now, &iface->request_time, &res);
+#else
+		res = timespec_sub(now, iface->request_time);
+#endif /* HAVE_TIMESPECSUB */
 		log_debug("%s: res.tv_sec: %jd, rebinding_time: %u", __func__,
 		    res.tv_sec, iface->rebinding_time);
 		if (res.tv_sec >= iface->rebinding_time)
@@ -1606,7 +1670,11 @@ iface_timeout(int fd, short events, void *arg)
 		break;
 	case IF_REBINDING:
 		clock_gettime(CLOCK_MONOTONIC, &now);
+#ifdef HAVE_TIMESPECSUB
 		timespecsub(&now, &iface->request_time, &res);
+#else
+        res = timespec_sub(now, iface->request_time);
+#endif /* HAVE_TIMESPECSUB */
 		log_debug("%s: res.tv_sec: %jd, lease_time: %u", __func__,
 		    res.tv_sec, iface->lease_time);
 		if (res.tv_sec > iface->lease_time)
