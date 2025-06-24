@@ -60,8 +60,9 @@
 #define __dead		__attribute__((__noreturn__))
 #endif
 
-#if !defined(HAVE_REALLOCARRAY)
+#ifndef HAVE_REALLOCARRAY
 #include "reallocarray.h"
+#define reallocarray openbsd_reallocarray
 #endif
 #include "log.h"
 #include "dhcpleased.h"
