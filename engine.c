@@ -805,7 +805,7 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 #if defined(__OpenBSD__)
 	if (bcast_mac.ether_addr_octet[0] == 0)
 		memset(bcast_mac.ether_addr_octet, 0xff, ETHER_ADDR_LEN);
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 	if (bcast_mac.octet[0] == 0)
 		memset(bcast_mac.octet, 0xff, ETHER_ADDR_LEN);
 #endif
@@ -830,7 +830,7 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 #if defined(__OpenBSD__)
 	memcpy(ether_src.ether_addr_octet, eh->ether_shost,
 	    sizeof(ether_src.ether_addr_octet));
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 	memcpy(ether_src.octet, eh->ether_shost,
 	    sizeof(ether_src.octet));
 #endif
@@ -838,7 +838,7 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 #if defined(__OpenBSD__)
 	memcpy(ether_dst.ether_addr_octet, eh->ether_dhost,
 	    sizeof(ether_dst.ether_addr_octet));
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 	memcpy(ether_dst.octet, eh->ether_dhost,
 	    sizeof(ether_dst.octet));
 #endif
@@ -1439,10 +1439,17 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 		iface->siaddr = dhcp_hdr->siaddr;
 
 		/* we made sure this is a string futher up */
+#if defined(__OpenBSD__)
+		strnvis(iface->file,
+				dhcp_hdr->file,
+				sizeof(iface->file),
+		    VIS_SAFE);
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 		strnvis(iface->file,
 				sizeof(iface->file),
 				dhcp_hdr->file,
 		    VIS_SAFE);
+#endif
 
 		strlcpy(iface->domainname, domainname,
 		    sizeof(iface->domainname));

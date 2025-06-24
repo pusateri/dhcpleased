@@ -795,7 +795,7 @@ init_ifaces(void)
 					continue;
 				memcpy(ifinfo.hw_address.ether_addr_octet,
 				    LLADDR(sdl), ETHER_ADDR_LEN);
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 				if (sdl->sdl_type != IFT_ETHER ||
 				    sdl->sdl_alen != ETHER_ADDR_LEN)
 					continue;
@@ -871,7 +871,7 @@ route_receive(int fd, short events, void *arg)
 
 #if defined(__OpenBSD__)
 	sa = (struct sockaddr *)(buf + rtm->rtm_hdrlen);
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 	sa = (struct sockaddr *)(buf + sizeof(struct rt_msghdr));
 #endif
 	get_rtaddrs(rtm->rtm_addrs, sa, rti_info);

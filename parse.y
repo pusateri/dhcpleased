@@ -203,7 +203,7 @@ ifaceoptsl	: SEND VENDOR CLASS ID STRING {
 
 #if defined(__OpenBSD__)
 			len = strnunvis(buf, $5, sizeof(buf));
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 			len = strnunvis(buf, sizeof(buf), $5);
 #endif
 			free($5);
@@ -261,7 +261,7 @@ ifaceoptsl	: SEND VENDOR CLASS ID STRING {
 			if (not_hex) {
 #if defined(__OpenBSD__)
 				len = strnunvis(buf, $4, sizeof(buf));
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__APPLE__)
 				len = strnunvis(buf, sizeof(buf), $4);
 #endif
 				free($4);
